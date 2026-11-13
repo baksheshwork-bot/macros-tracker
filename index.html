@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="ماكروز" />
+  <title>ماكروز | متابع السعرات الذكي</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Cairo', 'Inter', 'sans-serif'],
+            num: ['Inter', 'Cairo', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    body {
+      background: #000000;
+      color: #fafafa;
+      font-family: 'Cairo', 'Inter', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      padding-top: var(--safe-top);
+      padding-bottom: calc(96px + var(--safe-bottom));
+    }
+    .num {
+      font-family: 'Inter', 'Cairo', sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+    .ios-card {
+      background: #121216;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 24px;
+    }
+    .ios-surface {
+      background: #1c1c22;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .floating-nav {
+      bottom: calc(14px + var(--safe-bottom));
+      background: rgba(20, 20, 25, 0.82);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.65);
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    @keyframes slideUp {
+      from { transform: translateY(16px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .animate-in { animation: slideUp 0.22s ease-out; }
+    /* 16px minimum stops iOS Safari from zooming the page when a field is focused */
+    input:not([type="date"]):not([type="month"]):not([type="file"]), select, textarea { font-size: 16px; }
+  </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-emerald-500/30">
+
+  <!-- Minimalist iOS Header -->
+  <header class="sticky top-0 z-30 bg-black/80 backdrop-blur-xl">
+    <div class="max-w-lg mx-auto px-4 pt-3 pb-2.5 flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-emerald-400 to-cyan-400 flex items-center justify-center text-black font-black text-sm shadow-lg shadow-emerald-500/20">
+          M
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base font-black tracking-tight text-white">ماكروز</h1>
+            <span id="sync-status-pill" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-900 text-zinc-400 border border-white/5">💾 محلي</span>
+          </div>
+          <p class="text-[11px] text-zinc-500">الهدف <span id="header-target-kcal" class="num font-semibold text-zinc-300">2500</span> سعرة</p>
+        </div>
+      </div>
+
+      <!-- Compact Date Pill -->
+      <div class="flex items-center gap-0.5 bg-zinc-900/90 border border-white/10 rounded-full px-1.5 py-1">
+        <button id="prev-day-btn" type="button" aria-label="اليوم السابق" class="w-7 h-7 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 active:scale-90 transition">
+          &#8250;
+        </button>
+        <input id="date-picker" type="date" class="bg-transparent text-[11px] font-bold text-zinc-100 num focus:outline-none text-center w-[104px]" />
+        <button id="next-day-btn" type="button" aria-label="اليوم التالي" class="w-7 h-7 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 active:scale-90 transition">
+          &#8249;
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-lg mx-auto px-4 pt-2 space-y-4">
+
+    <!-- VIEW 1: TODAY -->
+    <section id="view-today" class="space-y-4">
+
+      <!-- Hero Calories & Macros Card -->
+      <div class="ios-card p-5 space-y-5 relative overflow-hidden">
+        <div class="absolute -top-20 -left-20 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div class="flex items-center justify-between gap-4 relative">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <span id="day-label" class="text-xs font-bold text-zinc-400">اليوم</span>
+              <span id="day-verdict-badge" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-zinc-800 text-zinc-300">قيد التسجيل</span>
+            </div>
+            <div class="flex items-baseline gap-1.5 pt-1">
+              <span id="total-kcal" class="num text-4xl font-black tracking-tight text-white">0</span>
+              <span class="text-xs text-zinc-500 num">/ <span id="target-kcal-display">2500</span> kcal</span>
+            </div>
+            <p id="remaining-kcal-text" class="text-xs font-bold text-emerald-400">متبقي 2500 سعرة</p>
+          </div>
+
+          <!-- Smooth Gradient Ring -->
+          <div class="relative w-[92px] h-[92px] shrink-0 flex items-center justify-center">
+            <svg class="w-full h-full -rotate-90" viewBox="0 0 100 100">
+              <defs>
+                <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#34d399" />
+                  <stop offset="100%" stop-color="#22d3ee" />
+                </linearGradient>
+              </defs>
+              <circle cx="50" cy="50" r="41" stroke="#222228" stroke-width="9" fill="none" />
+              <circle id="kcal-ring" cx="50" cy="50" r="41" stroke="url(#ringGrad)" stroke-width="9" stroke-linecap="round" fill="none"
+                stroke-dasharray="257.61" stroke-dashoffset="257.61" class="transition-all duration-500 ease-out" />
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center">
+              <span id="kcal-pct" class="num text-base font-black text-white">0%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3 Clean Macro Bars -->
+        <div class="grid grid-cols-3 gap-2.5">
+          <div class="ios-surface rounded-2xl p-3 space-y-1.5">
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="font-bold text-sky-400">بروتين</span>
+              <span id="protein-pct" class="num text-zinc-500">0%</span>
+            </div>
+            <div class="num text-sm font-black text-white">
+              <span id="total-protein">0</span><span class="text-[11px] font-medium text-zinc-500"> / <span id="target-protein-display">190</span>g</span>
+            </div>
+            <div class="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+              <div id="bar-protein" class="h-full bg-sky-400 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div class="ios-surface rounded-2xl p-3 space-y-1.5">
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="font-bold text-amber-400">كارب</span>
+              <span id="carbs-pct" class="num text-zinc-500">0%</span>
+            </div>
+            <div class="num text-sm font-black text-white">
+              <span id="total-carbs">0</span><span class="text-[11px] font-medium text-zinc-500"> / <span id="target-carbs-display">270</span>g</span>
+            </div>
+            <div class="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+              <div id="bar-carbs" class="h-full bg-amber-400 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div class="ios-surface rounded-2xl p-3 space-y-1.5">
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="font-bold text-rose-400">دهون</span>
+              <span id="fat-pct" class="num text-zinc-500">0%</span>
+            </div>
+            <div class="num text-sm font-black text-white">
+              <span id="total-fat">0</span><span class="text-[11px] font-medium text-zinc-500"> / <span id="target-fat-display">70</span>g</span>
+            </div>
+            <div class="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+              <div id="bar-fat" class="h-full bg-rose-400 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Spotlight AI Meal Input -->
+      <div class="ios-card p-3.5 space-y-3">
+        <div class="flex items-center justify-between px-1">
+          <span class="text-xs font-bold text-zinc-200">✨ سجّل أكلك بكلمة</span>
+          <span id="ai-mode-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">محلل ذكي</span>
+        </div>
+
+        <!-- Horizontal Meal Chips -->
+        <div id="smart-meal-chips" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+          <button type="button" data-smart-meal="breakfast" class="smart-chip shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold bg-emerald-500 text-black transition">🌅 الفطار</button>
+          <button type="button" data-smart-meal="lunch" class="smart-chip shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold bg-zinc-800/80 text-zinc-300 transition">🍛 الغدا</button>
+          <button type="button" data-smart-meal="pre_gym" class="smart-chip shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold bg-zinc-800/80 text-zinc-300 transition">⚡ قبل الجيم</button>
+          <button type="button" data-smart-meal="post_gym" class="smart-chip shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold bg-zinc-800/80 text-zinc-300 transition">💪 بعد الجيم</button>
+          <button type="button" data-smart-meal="dinner" class="smart-chip shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold bg-zinc-800/80 text-zinc-300 transition">🌙 العشاء</button>
+        </div>
+
+        <!-- Input Pill with Embedded Action -->
+        <div class="flex items-center gap-2 bg-zinc-900/90 border border-white/10 rounded-2xl p-1.5 focus-within:border-emerald-500/60 transition">
+          <input id="smart-input" type="text" placeholder="مثلاً: 3 بيضات و 200 جم فول..."
+            class="flex-1 bg-transparent px-2.5 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none" />
+          <button id="ai-analyze-btn" type="button"
+            class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-400 text-black font-black text-xs shrink-0 active:scale-95 transition">
+            ✨ حلل
+          </button>
+        </div>
+
+        <!-- AI Preview Result -->
+        <div id="smart-preview" class="hidden animate-in bg-emerald-500/10 border border-emerald-500/25 rounded-2xl p-3 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span id="smart-match-name" class="text-xs font-extrabold text-emerald-300">تم التحليل</span>
+            <span id="smart-match-macros" class="num text-[11px] font-bold text-white"></span>
+          </div>
+          <div id="smart-items-list" class="space-y-1.5"></div>
+          <div id="smart-unmatched-list" class="space-y-1.5"></div>
+          <button id="smart-add-btn" type="button"
+            class="w-full py-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs active:scale-[0.98] transition">
+            ✅ إضافة الكل للوجبة
+          </button>
+        </div>
+      </div>
+
+      <!-- 5 Meals List (Clean Compact Cards) -->
+      <div id="meals-container" class="space-y-2.5"></div>
+    </section>
+
+    <!-- VIEW 2: END OF DAY VERDICT -->
+    <section id="view-eod" class="hidden space-y-4">
+      <div class="ios-card p-5 space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-black text-white">تقييم نهاية اليوم</h2>
+            <p id="eod-date-text" class="text-xs text-zinc-500 num"></p>
+          </div>
+          <span id="eod-status-pill" class="px-3 py-1 rounded-full text-xs font-extrabold bg-zinc-800 text-zinc-300"></span>
+        </div>
+
+        <div id="eod-verdict-box" class="ios-surface rounded-2xl p-4 text-sm leading-relaxed text-zinc-200"></div>
+
+        <div class="grid grid-cols-2 gap-2.5">
+          <div class="ios-surface rounded-2xl p-3.5 text-center">
+            <div class="text-[11px] text-zinc-400">السعرات</div>
+            <div id="eod-kcal" class="num text-xl font-black text-white mt-0.5">0</div>
+            <div id="eod-kcal-diff" class="num text-[11px] text-zinc-500 mt-0.5"></div>
+          </div>
+          <div class="ios-surface rounded-2xl p-3.5 text-center">
+            <div class="text-[11px] text-zinc-400">البروتين</div>
+            <div id="eod-protein" class="num text-xl font-black text-sky-400 mt-0.5">0g</div>
+            <div id="eod-protein-diff" class="num text-[11px] text-zinc-500 mt-0.5"></div>
+          </div>
+          <div class="ios-surface rounded-2xl p-3.5 text-center">
+            <div class="text-[11px] text-zinc-400">الكارب</div>
+            <div id="eod-carbs" class="num text-xl font-black text-amber-400 mt-0.5">0g</div>
+            <div id="eod-carbs-diff" class="num text-[11px] text-zinc-500 mt-0.5"></div>
+          </div>
+          <div class="ios-surface rounded-2xl p-3.5 text-center">
+            <div class="text-[11px] text-zinc-400">الدهون الصحية</div>
+            <div id="eod-fat" class="num text-xl font-black text-rose-400 mt-0.5">0g</div>
+            <div id="eod-fat-diff" class="num text-[11px] text-zinc-500 mt-0.5"></div>
+          </div>
+        </div>
+
+        <div class="space-y-2 pt-2">
+          <h3 class="text-xs font-bold text-zinc-400 px-1">توزيع الوجبات</h3>
+          <div id="eod-meals-breakdown" class="space-y-1.5"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: MONTHLY REPORT -->
+    <section id="view-monthly" class="hidden space-y-4">
+      <div class="ios-card p-5 space-y-4">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <h2 class="text-lg font-black text-white">تقرير الشهر</h2>
+            <p class="text-[11px] text-zinc-500">اضغط على أي يوم لفتحه</p>
+          </div>
+          <input id="month-picker" type="month" class="bg-zinc-900 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-white num focus:outline-none" />
+        </div>
+
+        <div class="grid grid-cols-4 gap-2">
+          <div class="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-2.5 text-center">
+            <div class="text-[10px] text-emerald-300 font-bold">التزام</div>
+            <div id="m-on-track" class="num text-lg font-black text-emerald-400 mt-0.5">0</div>
+          </div>
+          <div class="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-2.5 text-center">
+            <div class="text-[10px] text-rose-300 font-bold">عك</div>
+            <div id="m-over" class="num text-lg font-black text-rose-400 mt-0.5">0</div>
+          </div>
+          <div class="bg-sky-500/10 border border-sky-500/20 rounded-2xl p-2.5 text-center">
+            <div class="text-[10px] text-sky-300 font-bold">النسبة</div>
+            <div id="m-rate" class="num text-lg font-black text-sky-400 mt-0.5">0%</div>
+          </div>
+          <div class="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-2.5 text-center">
+            <div class="text-[10px] text-amber-300 font-bold">المتوسط</div>
+            <div id="m-avg-kcal" class="num text-lg font-black text-amber-400 mt-0.5">0</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-zinc-500 pt-1">
+          <div>سبت</div><div>أحد</div><div>إثنين</div><div>ثلاثاء</div><div>أربعاء</div><div>خميس</div><div>جمعة</div>
+        </div>
+        <div id="calendar-grid" class="grid grid-cols-7 gap-1.5"></div>
+      </div>
+
+      <div class="ios-card p-5 space-y-3">
+        <h3 class="text-xs font-bold text-zinc-300">منحنى السعرات اليومية</h3>
+        <div class="relative h-60">
+          <canvas id="monthly-chart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 4: SETTINGS -->
+    <section id="view-settings" class="hidden space-y-4">
+      <div class="ios-card p-5 space-y-3.5">
+        <h2 class="text-base font-black text-white">🎯 الأهداف اليومية</h2>
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label for="cfg-kcal" class="block text-[11px] text-zinc-400 mb-1">السعرات (kcal)</label>
+            <input id="cfg-kcal" type="number" min="500" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white num" />
+          </div>
+          <div>
+            <label for="cfg-protein" class="block text-[11px] text-zinc-400 mb-1">البروتين (g)</label>
+            <input id="cfg-protein" type="number" min="10" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white num" />
+          </div>
+          <div>
+            <label for="cfg-carbs" class="block text-[11px] text-zinc-400 mb-1">الكارب (g)</label>
+            <input id="cfg-carbs" type="number" min="10" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white num" />
+          </div>
+          <div>
+            <label for="cfg-fat" class="block text-[11px] text-zinc-400 mb-1">الدهون الصحية (g)</label>
+            <input id="cfg-fat" type="number" min="5" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white num" />
+          </div>
+        </div>
+        <button id="save-targets-btn" type="button" class="w-full py-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs transition">
+          حفظ الأهداف
+        </button>
+      </div>
+
+      <!-- Gemini AI Key -->
+      <div class="ios-card p-5 space-y-3">
+        <div>
+          <h2 class="text-base font-black text-white">🤖 مفتاح Gemini AI</h2>
+          <p class="text-[11px] text-zinc-400">لتحليل أي وصفة أو وجبة مصرية بالذكاء الاصطناعي</p>
+        </div>
+        <input id="gemini-key-input" type="password" placeholder="AIzaSy..." class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white num" dir="ltr" />
+        <button id="save-ai-key-btn" type="button" class="w-full py-2.5 rounded-xl bg-sky-400 hover:bg-sky-300 text-black font-black text-xs transition">
+          حفظ مفتاح الـ AI
+        </button>
+      </div>
+
+      <!-- Cloud Sync -->
+      <div class="ios-card p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-black text-white">☁️ الحفظ السحابي</h2>
+            <p class="text-[11px] text-zinc-400">مزامنة دائمة أونلاين</p>
+          </div>
+          <button id="sync-now-btn" type="button" class="px-3 py-1.5 rounded-full bg-emerald-500/15 text-emerald-300 text-xs font-bold">
+            مزامنة الآن
+          </button>
+        </div>
+        <select id="sync-provider" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs font-bold text-white">
+          <option value="none">حفظ محلي على الموبايل فقط</option>
+          <option value="supabase">Supabase (قاعدة بيانات دائمة)</option>
+          <option value="apps_script">Google Apps Script (Google Sheet)</option>
+        </select>
+
+        <div id="sync-supabase-fields" class="hidden space-y-2.5">
+          <input id="sb-url" type="url" placeholder="https://xxxx.supabase.co" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white num" dir="ltr" />
+          <input id="sb-key" type="password" placeholder="Supabase Anon Public Key" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white num" dir="ltr" />
+          <input id="sb-id" type="text" placeholder="ayman_macros" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white num" dir="ltr" />
+          <div class="bg-zinc-950 border border-white/10 rounded-xl p-2.5 text-[10px] text-zinc-400 select-all" dir="ltr">
+            create table if not exists macro_sync (id text primary key, data jsonb not null, updated_at timestamptz default now());
+          </div>
+        </div>
+
+        <div id="sync-script-fields" class="hidden">
+          <input id="gs-url" type="url" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white num" dir="ltr" />
+        </div>
+
+        <button id="save-sync-btn" type="button" class="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs transition">
+          حفظ إعدادات السحابة
+        </button>
+      </div>
+
+      <!-- Custom Foods & Backup -->
+      <div class="ios-card p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-black text-white">🍽️ أكلاتك المخصصة</h2>
+          <button id="open-custom-food-btn" type="button" class="px-3 py-1.5 rounded-full bg-zinc-800 text-zinc-200 text-xs font-bold">+ جديد</button>
+        </div>
+        <div id="custom-foods-list" class="space-y-2 text-xs"></div>
+        <div class="grid grid-cols-2 gap-2 pt-2 border-t border-white/10">
+          <button id="export-btn" type="button" class="py-2.5 rounded-xl bg-zinc-900 text-zinc-300 font-bold text-xs border border-white/10">تصدير JSON</button>
+          <label class="py-2.5 rounded-xl bg-zinc-900 text-zinc-300 font-bold text-xs border border-white/10 text-center cursor-pointer">
+            استيراد JSON
+            <input id="import-input" type="file" accept=".json" class="hidden" />
+          </label>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Floating iOS Pill Bottom Navigation -->
+  <div class="fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pointer-events-none">
+    <nav class="floating-nav pointer-events-auto w-full max-w-md rounded-full px-2 py-1.5 mb-3 grid grid-cols-4 gap-1">
+      <button type="button" data-tab="today" class="nav-tab flex flex-col items-center py-1.5 rounded-full bg-white/10 text-emerald-400 font-bold text-[10px] transition">
+        <span class="text-base leading-none mb-0.5">🍽️</span>
+        <span>اليوم</span>
+      </button>
+      <button type="button" data-tab="eod" class="nav-tab flex flex-col items-center py-1.5 rounded-full text-zinc-400 font-semibold text-[10px] transition">
+        <span class="text-base leading-none mb-0.5">🎯</span>
+        <span>التقييم</span>
+      </button>
+      <button type="button" data-tab="monthly" class="nav-tab flex flex-col items-center py-1.5 rounded-full text-zinc-400 font-semibold text-[10px] transition">
+        <span class="text-base leading-none mb-0.5">📅</span>
+        <span>الشهر</span>
+      </button>
+      <button type="button" data-tab="settings" class="nav-tab flex flex-col items-center py-1.5 rounded-full text-zinc-400 font-semibold text-[10px] transition">
+        <span class="text-base leading-none mb-0.5">⚙️</span>
+        <span>الإعدادات</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Add Food Bottom Sheet Modal -->
+  <div id="add-food-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-[#121216] border border-white/10 w-full max-w-lg rounded-t-[28px] sm:rounded-[28px] p-5 space-y-4 max-h-[90vh] overflow-y-auto animate-in">
+      <div class="w-10 h-1 bg-zinc-700 rounded-full mx-auto sm:hidden"></div>
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-black text-white"><span id="modal-action-label">إضافة لـ</span> <span id="modal-meal-title" class="text-emerald-400"></span></h3>
+          <p class="text-[11px] text-zinc-500">اختر أكلة سريعة أو ابحث واكتب الوزن/العدد</p>
+        </div>
+        <button id="close-food-modal" type="button" class="w-8 h-8 rounded-full bg-zinc-800 text-zinc-300 flex items-center justify-center">&times;</button>
+      </div>
+
+      <!-- Quick Staple Chips -->
+      <div id="quick-staple-chips" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        <button type="button" data-quick-id="chicken_cooked" class="shrink-0 px-3 py-1.5 rounded-full bg-zinc-800 text-xs font-bold text-zinc-200 hover:bg-zinc-700">🍗 صدور فراخ</button>
+        <button type="button" data-quick-id="egg_whole" class="shrink-0 px-3 py-1.5 rounded-full bg-zinc-800 text-xs font-bold text-zinc-200 hover:bg-zinc-700">🥚 بيض</button>
+        <button type="button" data-quick-id="cottage_cheese" class="shrink-0 px-3 py-1.5 rounded-full bg-zinc-800 text-xs font-bold text-zinc-200 hover:bg-zinc-700">🧀 قريش</button>
+        <button type="button" data-quick-id="foul_medames" class="shrink-0 px-3 py-1.5 rounded-full bg-zinc-800 text-xs font-bold text-zinc-200 hover:bg-zinc-700">🫘 فول</button>
+        <button type="button" data-quick-id="tuna_water" class="shrink-0 px-3 py-1.5 rounded-full bg-zinc-800 text-xs font-bold text-zinc-200 hover:bg-zinc-700">🐟 تونة</button>
+        <button type="button" data-quick-id="white_rice" class="shrink-0 px-3 py-1.5 rounded-full bg-zinc-800 text-xs font-bold text-zinc-200 hover:bg-zinc-700">🍚 رز</button>
+        <button type="button" data-quick-id="oats_dry" class="shrink-0 px-3 py-1.5 rounded-full bg-zinc-800 text-xs font-bold text-zinc-200 hover:bg-zinc-700">🥣 شوفان</button>
+        <button type="button" data-quick-id="whey_protein" class="shrink-0 px-3 py-1.5 rounded-full bg-zinc-800 text-xs font-bold text-zinc-200 hover:bg-zinc-700">🥤 واي</button>
+      </div>
+
+      <input id="food-search" type="text" placeholder="ابحث عن أي أكلة..."
+        class="w-full bg-zinc-900 border border-white/10 rounded-2xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500" />
+
+      <div id="food-picker-list" class="max-h-40 overflow-y-auto space-y-1.5"></div>
+
+      <div class="ios-surface rounded-2xl p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <span id="selected-food-name" class="text-sm font-black text-white">اختر أكلة</span>
+          <button id="modal-new-custom-btn" type="button" class="text-[11px] text-sky-400 font-bold">+ أكلة مخصصة</button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2.5">
+          <input id="food-qty" type="number" step="0.5" min="0.1" value="100" aria-label="الكمية"
+            class="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 text-base font-black text-white num focus:outline-none focus:border-emerald-500" />
+          <select id="food-unit-mode" aria-label="الوحدة" class="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 text-xs font-bold text-white">
+            <option value="grams">جرام (g)</option>
+            <option value="unit">عدد / حصة</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-4 gap-2 text-center bg-black/40 rounded-xl p-2.5">
+          <div><div class="text-[10px] text-zinc-500">سعرات</div><div id="preview-kcal" class="num text-sm font-black text-emerald-400">0</div></div>
+          <div><div class="text-[10px] text-zinc-500">بروتين</div><div id="preview-p" class="num text-sm font-black text-sky-400">0g</div></div>
+          <div><div class="text-[10px] text-zinc-500">كارب</div><div id="preview-c" class="num text-sm font-black text-amber-400">0g</div></div>
+          <div><div class="text-[10px] text-zinc-500">دهون</div><div id="preview-f" class="num text-sm font-black text-rose-400">0g</div></div>
+        </div>
+
+        <button id="confirm-add-food-btn" type="button"
+          class="w-full py-3 rounded-2xl bg-emerald-400 hover:bg-emerald-300 text-black font-black text-sm active:scale-[0.98] transition disabled:opacity-40 disabled:pointer-events-none">
+          إضافة للوجبة
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Food Modal -->
+  <div id="custom-food-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-[#121216] border border-white/10 w-full max-w-md rounded-t-[28px] sm:rounded-[28px] p-5 space-y-3.5 animate-in">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-black text-white">إضافة أكلة مخصصة</h3>
+        <button id="close-custom-modal" type="button" class="w-8 h-8 rounded-full bg-zinc-800 text-zinc-300 flex items-center justify-center">&times;</button>
+      </div>
+      <input id="cf-name" type="text" placeholder="اسم الأكلة (مثال: خلطة القريش)" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white" />
+      <div class="grid grid-cols-2 gap-2.5">
+        <select id="cf-basis" aria-label="الحساب لكل" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
+          <option value="100g">لكل 100 جرام</option>
+          <option value="unit">لكل 1 قطعة / حصة</option>
+        </select>
+        <input id="cf-unit-label" type="text" placeholder="اسم الوحدة (اختياري)" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white" />
+      </div>
+      <div class="grid grid-cols-2 gap-2.5">
+        <div><label for="cf-kcal" class="block text-[10px] text-zinc-400 mb-1">السعرات</label><input id="cf-kcal" type="number" min="0" value="0" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white num" /></div>
+        <div><label for="cf-p" class="block text-[10px] text-zinc-400 mb-1">البروتين (g)</label><input id="cf-p" type="number" min="0" step="0.1" value="0" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white num" /></div>
+        <div><label for="cf-c" class="block text-[10px] text-zinc-400 mb-1">الكارب (g)</label><input id="cf-c" type="number" min="0" step="0.1" value="0" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white num" /></div>
+        <div><label for="cf-f" class="block text-[10px] text-zinc-400 mb-1">الدهون (g)</label><input id="cf-f" type="number" min="0" step="0.1" value="0" class="w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white num" /></div>
+      </div>
+      <button id="save-custom-food-btn" type="button" class="w-full py-3 rounded-2xl bg-sky-400 hover:bg-sky-300 text-black font-black text-sm">
+        حفظ الأكلة
+      </button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" role="status" aria-live="polite" class="hidden fixed top-16 left-1/2 -translate-x-1/2 z-[60] w-max max-w-[92vw] bg-zinc-900 border border-white/15 text-white px-4 py-2 rounded-full text-xs font-bold shadow-2xl flex items-center gap-3">
+    <span id="toast-text"></span>
+    <button id="toast-action" type="button" class="hidden text-emerald-400 font-black py-1 px-1"></button>
+  </div>
+
+  <script>
+    const DEFAULT_FOODS = [
+      { id: 'chicken_cooked', name: 'صدور فراخ مطبوخة', aliases: ['فراخ', 'صدور', 'دجاج', 'chicken'], kcal: 165, p: 31, c: 0, f: 3.6, unitName: 'قطعة', unitGrams: 150 },
+      { id: 'chicken_raw', name: 'صدور فراخ نية', aliases: ['فراخ نية', 'صدور نية'], kcal: 120, p: 23, c: 0, f: 2.6, unitName: 'قطعة', unitGrams: 150 },
+      { id: 'chicken_liver', name: 'كبدة فراخ مطبوخة', aliases: ['كبدة', 'كبدة فراخ', 'liver'], kcal: 167, p: 24.5, c: 0.9, f: 6.5, unitName: 'حصة', unitGrams: 100 },
+      { id: 'egg_whole', name: 'بيضة كاملة', aliases: ['بيض', 'بيضة', 'بيض مسلوق', 'egg'], kcal: 155, p: 12.6, c: 1.1, f: 10.6, unitName: 'بيضة', unitGrams: 50 },
+      { id: 'cottage_cheese', name: 'جبنة قريش', aliases: ['قريش', 'جبنة قريش', 'cottage'], kcal: 98, p: 11.1, c: 2.7, f: 4.3, unitName: 'طبق صغير', unitGrams: 150 },
+      { id: 'foul_medames', name: 'فول مدمس (بدون زيت)', aliases: ['فول', 'فول مدمس', 'مدمس', 'fava', 'foul'], kcal: 110, p: 7.6, c: 19.6, f: 0.4, unitName: 'طبق', unitGrams: 170 },
+      { id: 'tuna_water', name: 'تونة بالماء (مصفاة)', aliases: ['تونة', 'تونه', 'tuna'], kcal: 116, p: 25.5, c: 0, f: 0.8, unitName: 'علبة', unitGrams: 142 },
+      { id: 'beef_90', name: 'لحم مفروم 90/10 مطبوخ', aliases: ['لحمة', 'لحم', 'مفروم', 'beef'], kcal: 230, p: 28.4, c: 0, f: 12, unitName: 'حصة', unitGrams: 100 },
+      { id: 'whey_protein', name: 'واي بروتين (Whey)', aliases: ['واي', 'بروتين', 'whey', 'سكوب'], kcal: 400, p: 80, c: 10, f: 3.3, unitName: 'سكوب', unitGrams: 30 },
+      { id: 'greek_yogurt', name: 'زبادي يوناني خالي الدسم', aliases: ['زبادي', 'يوناني', 'yogurt'], kcal: 60, p: 10, c: 4, f: 0, unitName: 'علبة', unitGrams: 150 },
+      { id: 'oats_dry', name: 'شوفان جاف', aliases: ['شوفان', 'oats'], kcal: 379, p: 13.2, c: 67.7, f: 6.5, unitName: 'معلقة كبيرة', unitGrams: 10 },
+      { id: 'white_rice', name: 'أرز أبيض مطبوخ', aliases: ['رز', 'أرز', 'ارز', 'rice'], kcal: 130, p: 2.7, c: 28.2, f: 0.3, unitName: 'كوب', unitGrams: 150 },
+      { id: 'pasta_cooked', name: 'مكرونة مطبوخة', aliases: ['مكرونة', 'مكرونه', 'باستا', 'pasta'], kcal: 158, p: 5.8, c: 31, f: 0.9, unitName: 'كوب', unitGrams: 140 },
+      { id: 'potato_boiled', name: 'بطاطس مسلوقة', aliases: ['بطاطس', 'potato'], kcal: 86, p: 1.7, c: 20, f: 0.1, unitName: 'حبة متوسطة', unitGrams: 150 },
+      { id: 'sweet_potato', name: 'بطاطا حلوة مسلوقة', aliases: ['بطاطا', 'sweet potato'], kcal: 76, p: 1.6, c: 17.7, f: 0.1, unitName: 'حبة متوسطة', unitGrams: 150 },
+      { id: 'banana', name: 'موز', aliases: ['موز', 'موزة', 'banana'], kcal: 89, p: 1.1, c: 22.8, f: 0.3, unitName: 'موزة متوسطة', unitGrams: 118 },
+      { id: 'baladi_bread', name: 'عيش بلدي مصري', aliases: ['عيش', 'خبز', 'بلدي', 'رغيف'], kcal: 239, p: 8, c: 48, f: 0.4, unitName: 'رغيف', unitGrams: 90 },
+      { id: 'peanut_butter', name: 'زبدة فول سوداني', aliases: ['فول سوداني', 'زبدة فول', 'peanut'], kcal: 588, p: 21.9, c: 24, f: 49.5, unitName: 'معلقة كبيرة', unitGrams: 16 },
+      { id: 'almonds', name: 'لوز نيء', aliases: ['لوز', 'مكسرات', 'almonds'], kcal: 579, p: 21.1, c: 21.6, f: 49.9, unitName: 'حبة', unitGrams: 1.2 },
+      { id: 'olive_oil', name: 'زيت زيتون', aliases: ['زيت', 'زيت زيتون', 'olive oil'], kcal: 884, p: 0, c: 0, f: 100, unitName: 'معلقة كبيرة', unitGrams: 13.5 },
+      { id: 'avocado', name: 'أفوكادو', aliases: ['افوكادو', 'أفوكادو', 'avocado'], kcal: 160, p: 2, c: 8.5, f: 15, unitName: 'نصف حبة', unitGrams: 75 },
+      { id: 'monster_ultra', name: 'مونستر ألترا / قهوة سادة', aliases: ['مونستر', 'قهوة', 'monster', 'coffee'], kcal: 0, p: 0, c: 0, f: 0, unitName: 'علبة / كوب', unitGrams: 250 }
+    ];
+
+    const MEALS = [
+      { id: 'breakfast', name: 'الفطار', icon: '🌅', tint: 'bg-amber-500/15 text-amber-300' },
+      { id: 'lunch', name: 'الغدا', icon: '🍛', tint: 'bg-emerald-500/15 text-emerald-300' },
+      { id: 'pre_gym', name: 'قبل الجيم', icon: '⚡', tint: 'bg-cyan-500/15 text-cyan-300' },
+      { id: 'post_gym', name: 'بعد الجيم', icon: '💪', tint: 'bg-sky-500/15 text-sky-300' },
+      { id: 'dinner', name: 'العشاء', icon: '🌙', tint: 'bg-indigo-500/15 text-indigo-300' }
+    ];
+
+    const STORAGE_KEY = 'ayman_macro_tracker_v1';
+    const SYNC_KEY = 'ayman_macro_sync_cfg_v1';
+    const AI_KEY_STORAGE = 'ayman_macro_gemini_key_v1';
+
+    let syncTimer = null;
+    let smartMealTarget = 'breakfast';
+    let smartParsedItems = [];
+    let geminiApiKey = '';
+    try { geminiApiKey = localStorage.getItem(AI_KEY_STORAGE) || ''; } catch (e) {}
+
+    function getLocalTodayISO() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function loadState() {
+      const defaults = { targets: { kcal: 2500, p: 190, c: 270, f: 70 }, customFoods: [], logsByDate: {} };
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return defaults;
+        const parsed = JSON.parse(raw);
+        return {
+          targets: { ...defaults.targets, ...(parsed.targets || {}) },
+          customFoods: Array.isArray(parsed.customFoods) ? parsed.customFoods : [],
+          logsByDate: parsed.logsByDate && typeof parsed.logsByDate === 'object' ? parsed.logsByDate : {}
+        };
+      } catch (e) { return defaults; }
+    }
+
+    function loadSyncConfig() {
+      const def = { provider: 'none', supabaseUrl: '', supabaseKey: '', syncId: 'ayman_macros', scriptUrl: '' };
+      try {
+        const raw = localStorage.getItem(SYNC_KEY);
+        return raw ? { ...def, ...JSON.parse(raw) } : def;
+      } catch (e) { return def; }
+    }
+
+    let state = loadState();
+    let syncConfig = loadSyncConfig();
+    let currentDate = getLocalTodayISO();
+    let activeTab = 'today';
+    let modalMealId = 'breakfast';
+    let selectedFood = null;
+    let editingRef = null;
+    let smartUnmatched = [];
+    let reanalyzeAfterCustom = false;
+    let monthlyChartInstance = null;
+
+    function setSyncPill(text, cls) {
+      const el = document.getElementById('sync-status-pill');
+      if (!el) return;
+      el.textContent = text;
+      el.className = `text-[10px] font-bold px-2 py-0.5 rounded-full border border-white/5 ${cls}`;
+    }
+
+    async function pushToCloud() {
+      if (syncConfig.provider === 'none') return setSyncPill('💾 محلي', 'bg-zinc-900 text-zinc-400');
+      setSyncPill('⏳ يحفظ...', 'bg-amber-500/20 text-amber-300');
+      try {
+        if (syncConfig.provider === 'supabase' && syncConfig.supabaseUrl && syncConfig.supabaseKey) {
+          const base = syncConfig.supabaseUrl.replace(/\/+$/, '');
+          const res = await fetch(`${base}/rest/v1/macro_sync`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': syncConfig.supabaseKey,
+              'Authorization': `Bearer ${syncConfig.supabaseKey}`,
+              'Prefer': 'resolution=merge-duplicates'
+            },
+            body: JSON.stringify({ id: syncConfig.syncId || 'ayman_macros', data: state, updated_at: new Date().toISOString() })
+          });
+          if (!res.ok) throw new Error();
+          setSyncPill('☁️ متزامن', 'bg-emerald-500/20 text-emerald-300');
+        } else if (syncConfig.provider === 'apps_script' && syncConfig.scriptUrl) {
+          const res = await fetch(syncConfig.scriptUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'save', data: state })
+          });
+          if (!res.ok) throw new Error();
+          setSyncPill('☁️ متزامن', 'bg-emerald-500/20 text-emerald-300');
+        }
+      } catch (err) {
+        setSyncPill('⚠️ غير متصل', 'bg-rose-500/20 text-rose-300');
+      }
+    }
+
+    async function pullFromCloud(silent = false) {
+      if (syncConfig.provider === 'none') return setSyncPill('💾 محلي', 'bg-zinc-900 text-zinc-400');
+      setSyncPill('⏳ يزامن...', 'bg-amber-500/20 text-amber-300');
+      try {
+        let remoteData = null;
+        if (syncConfig.provider === 'supabase' && syncConfig.supabaseUrl && syncConfig.supabaseKey) {
+          const base = syncConfig.supabaseUrl.replace(/\/+$/, '');
+          const id = encodeURIComponent(syncConfig.syncId || 'ayman_macros');
+          const res = await fetch(`${base}/rest/v1/macro_sync?id=eq.${id}&select=data`, {
+            headers: { 'apikey': syncConfig.supabaseKey, 'Authorization': `Bearer ${syncConfig.supabaseKey}` }
+          });
+          if (!res.ok) throw new Error();
+          const rows = await res.json();
+          if (Array.isArray(rows) && rows.length > 0) remoteData = rows[0].data;
+        } else if (syncConfig.provider === 'apps_script' && syncConfig.scriptUrl) {
+          const res = await fetch(syncConfig.scriptUrl);
+          if (!res.ok) throw new Error();
+          const json = await res.json();
+          if (json && json.logsByDate) remoteData = json;
+        }
+        if (remoteData && remoteData.logsByDate) {
+          // Per day, keep whichever copy changed last; a day edited here after the cloud copy stays
+          const mergedLogs = { ...state.logsByDate };
+          let localNewer = Object.keys(state.logsByDate).some(d => !(d in remoteData.logsByDate));
+          for (const [d, remoteDay] of Object.entries(remoteData.logsByDate)) {
+            const localDay = state.logsByDate[d];
+            if (localDay && (localDay._ts || 0) > ((remoteDay && remoteDay._ts) || 0)) { localNewer = true; continue; }
+            mergedLogs[d] = remoteDay;
+          }
+          state = {
+            targets: remoteData.targets || state.targets,
+            customFoods: Array.isArray(remoteData.customFoods) ? remoteData.customFoods : state.customFoods,
+            logsByDate: mergedLogs
+          };
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+          renderAll();
+          if (!silent) showToast('تمت المزامنة ☁️');
+          if (localNewer) { await pushToCloud(); return; }
+        } else if (!silent) {
+          await pushToCloud();
+          showToast('تم رفع بياناتك ☁️');
+        }
+        setSyncPill('☁️ متزامن', 'bg-emerald-500/20 text-emerald-300');
+      } catch (err) {
+        setSyncPill('⚠️ تعذر الاتصال', 'bg-rose-500/20 text-rose-300');
+        if (!silent) showToast('تأكد من إعدادات السحابة');
+      }
+    }
+
+    function saveState() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+      if (syncConfig.provider !== 'none') {
+        clearTimeout(syncTimer);
+        syncTimer = setTimeout(() => pushToCloud(), 600);
+      }
+    }
+
+    function allFoods() { return [...state.customFoods, ...DEFAULT_FOODS]; }
+
+    function ensureDayLog(dateStr) {
+      if (!state.logsByDate[dateStr]) {
+        state.logsByDate[dateStr] = { breakfast: [], lunch: [], pre_gym: [], post_gym: [], dinner: [] };
+      }
+      return state.logsByDate[dateStr];
+    }
+
+    function computeDayTotals(dateStr) {
+      const day = state.logsByDate[dateStr];
+      const totals = { kcal: 0, p: 0, c: 0, f: 0, count: 0 };
+      if (!day) return totals;
+      for (const m of MEALS) {
+        for (const it of (day[m.id] || [])) {
+          totals.kcal += Number(it.kcal) || 0;
+          totals.p += Number(it.p) || 0;
+          totals.c += Number(it.c) || 0;
+          totals.f += Number(it.f) || 0;
+          totals.count += 1;
+        }
+      }
+      return {
+        kcal: Math.round(totals.kcal),
+        p: Math.round(totals.p * 10) / 10,
+        c: Math.round(totals.c * 10) / 10,
+        f: Math.round(totals.f * 10) / 10,
+        count: totals.count
+      };
+    }
+
+    function evaluateDayStatus(totals) {
+      if (totals.count === 0) return { code: 'empty', label: 'ابدأ يومك', badgeClass: 'bg-zinc-800 text-zinc-400' };
+      const target = Math.max(1, state.targets.kcal);
+      if (totals.kcal > target * 1.1) return { code: 'over', label: 'عكيت ⚠️', badgeClass: 'bg-rose-500/20 text-rose-300' };
+      if (totals.kcal >= target * 0.9) return { code: 'on_track', label: 'ملتزم 🎯', badgeClass: 'bg-emerald-500/20 text-emerald-300' };
+      return { code: 'under', label: 'قيد التقدم', badgeClass: 'bg-amber-500/20 text-amber-300' };
+    }
+
+    function showToast(msg, action) {
+      const el = document.getElementById('toast');
+      const btn = document.getElementById('toast-action');
+      document.getElementById('toast-text').textContent = msg;
+      if (action) {
+        btn.textContent = action.label;
+        btn.onclick = () => { el.classList.add('hidden'); action.onClick(); };
+        btn.classList.remove('hidden');
+      } else {
+        btn.classList.add('hidden');
+        btn.onclick = null;
+      }
+      el.classList.remove('hidden');
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(() => el.classList.add('hidden'), action ? 5000 : 2400);
+    }
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    }
+
+    const MODAL_IDS = ['add-food-modal', 'custom-food-modal'];
+    function isModalOpen(id) { return !document.getElementById(id).classList.contains('hidden'); }
+    function openModal(id) {
+      document.getElementById(id).classList.remove('hidden');
+      document.body.classList.add('overflow-hidden');
+    }
+    function closeModal(id) {
+      document.getElementById(id).classList.add('hidden');
+      if (!MODAL_IDS.some(isModalOpen)) document.body.classList.remove('overflow-hidden');
+    }
+
+    // Stamp a day whenever it changes, so cloud sync can keep the newer copy
+    function markDayChanged(dateStr) { ensureDayLog(dateStr)._ts = Date.now(); }
+
+    function calculateMacrosForFood(food, qty, mode) {
+      const q = Math.max(0, Number(qty) || 0);
+      if (food.isUnitOnly) {
+        return {
+          kcal: Math.round(food.kcal * q),
+          p: Math.round(food.p * q * 10) / 10,
+          c: Math.round(food.c * q * 10) / 10,
+          f: Math.round(food.f * q * 10) / 10,
+          displayQty: `${q} ${food.unitName || 'حصة'}`
+        };
+      }
+      const grams = mode === 'unit' ? q * (food.unitGrams || 100) : q;
+      const factor = grams / 100;
+      return {
+        kcal: Math.round(food.kcal * factor),
+        p: Math.round(food.p * factor * 10) / 10,
+        c: Math.round(food.c * factor * 10) / 10,
+        f: Math.round(food.f * factor * 10) / 10,
+        displayQty: mode === 'unit' ? `${q} ${food.unitName || 'حصة'} (${Math.round(grams)}g)` : `${Math.round(grams)} جم`
+      };
+    }
+
+    function renderAll() {
+      document.getElementById('date-picker').value = currentDate;
+      document.getElementById('header-target-kcal').textContent = state.targets.kcal;
+      document.getElementById('target-kcal-display').textContent = state.targets.kcal;
+      document.getElementById('target-protein-display').textContent = state.targets.p;
+      document.getElementById('target-carbs-display').textContent = state.targets.c;
+      document.getElementById('target-fat-display').textContent = state.targets.f;
+
+      const totals = computeDayTotals(currentDate);
+      const status = evaluateDayStatus(totals);
+
+      document.getElementById('day-label').textContent = currentDate === getLocalTodayISO() ? 'اليوم' : currentDate;
+      const badge = document.getElementById('day-verdict-badge');
+      badge.textContent = status.label;
+      badge.className = `text-[11px] font-bold px-2.5 py-0.5 rounded-full ${status.badgeClass}`;
+
+      document.getElementById('total-kcal').textContent = totals.kcal;
+      const diffKcal = state.targets.kcal - totals.kcal;
+      const remEl = document.getElementById('remaining-kcal-text');
+      if (diffKcal >= 0) {
+        remEl.textContent = `متبقي ${diffKcal} سعرة`;
+        remEl.className = 'text-xs font-bold text-emerald-400';
+      } else {
+        remEl.textContent = `زيادة ${Math.abs(diffKcal)} سعرة`;
+        remEl.className = 'text-xs font-bold text-rose-400';
+      }
+
+      const kcalPct = Math.round((totals.kcal / Math.max(1, state.targets.kcal)) * 100);
+      document.getElementById('kcal-pct').textContent = `${kcalPct}%`;
+      const ring = document.getElementById('kcal-ring');
+      const circ = 257.61;
+      ring.style.strokeDashoffset = circ - (circ * Math.min(100, Math.max(0, kcalPct))) / 100;
+      ring.setAttribute('stroke', kcalPct > 110 ? '#fb7185' : 'url(#ringGrad)');
+
+      const pPct = Math.round((totals.p / Math.max(1, state.targets.p)) * 100);
+      const cPct = Math.round((totals.c / Math.max(1, state.targets.c)) * 100);
+      const fPct = Math.round((totals.f / Math.max(1, state.targets.f)) * 100);
+
+      document.getElementById('total-protein').textContent = totals.p;
+      document.getElementById('protein-pct').textContent = `${pPct}%`;
+      document.getElementById('bar-protein').style.width = `${Math.min(100, pPct)}%`;
+
+      document.getElementById('total-carbs').textContent = totals.c;
+      document.getElementById('carbs-pct').textContent = `${cPct}%`;
+      document.getElementById('bar-carbs').style.width = `${Math.min(100, cPct)}%`;
+
+      document.getElementById('total-fat').textContent = totals.f;
+      document.getElementById('fat-pct').textContent = `${fPct}%`;
+      document.getElementById('bar-fat').style.width = `${Math.min(100, fPct)}%`;
+
+      renderMeals();
+      if (activeTab === 'eod') renderEOD();
+      if (activeTab === 'monthly') renderMonthly();
+      if (activeTab === 'settings') renderSettings();
+    }
+
+    function renderMeals() {
+      const container = document.getElementById('meals-container');
+      const day = state.logsByDate[currentDate] || {};
+      container.innerHTML = MEALS.map(meal => {
+        const items = day[meal.id] || [];
+        const mKcal = Math.round(items.reduce((s, x) => s + (Number(x.kcal) || 0), 0));
+        const mP = Math.round(items.reduce((s, x) => s + (Number(x.p) || 0), 0) * 10) / 10;
+        const mC = Math.round(items.reduce((s, x) => s + (Number(x.c) || 0), 0) * 10) / 10;
+        const mF = Math.round(items.reduce((s, x) => s + (Number(x.f) || 0), 0) * 10) / 10;
+
+        const itemsHtml = items.length === 0 ? '' : `
+          <div class="pt-2 mt-2.5 border-t border-white/5 space-y-0.5">
+            ${items.map((item, idx) => {
+              // Only items logged from the food list can be re-opened; AI items carry no food reference
+              const editable = item.foodId && allFoods().some(f => f.id === item.foodId);
+              const info = `
+                  <p class="text-xs font-bold text-zinc-100 truncate">${item.name} <span class="text-zinc-500 font-normal ${editable ? 'underline decoration-dotted underline-offset-4' : ''}">· ${item.displayQty}</span></p>
+                  <p class="num text-[11px] text-zinc-400">
+                    <span class="text-emerald-400 font-semibold">${item.kcal}</span> kcal · P ${item.p} · C ${item.c} · F ${item.f}
+                  </p>`;
+              return `
+              <div class="flex items-center justify-between gap-1">
+                ${editable
+                  ? `<button type="button" data-edit-meal="${meal.id}" data-edit-idx="${idx}" aria-label="تعديل كمية ${item.name}" class="min-w-0 flex-1 text-right py-1.5 rounded-lg active:bg-white/5 transition">${info}</button>`
+                  : `<div class="min-w-0 flex-1 py-1.5">${info}</div>`}
+                <button type="button" data-del-meal="${meal.id}" data-del-idx="${idx}" aria-label="حذف ${item.name}"
+                  class="group w-11 h-11 -ml-2 flex items-center justify-center shrink-0">
+                  <span class="w-7 h-7 rounded-full bg-zinc-800/80 text-zinc-400 group-hover:text-rose-400 flex items-center justify-center text-sm">&times;</span>
+                </button>
+              </div>`;
+            }).join('')}
+          </div>`;
+
+        return `
+          <div class="ios-card p-3.5 transition">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-2xl ${meal.tint} flex items-center justify-center text-lg shrink-0">
+                  ${meal.icon}
+                </div>
+                <div class="min-w-0">
+                  <h3 class="text-sm font-black text-white">${meal.name}</h3>
+                  <p class="num text-[11px] text-zinc-500">${mKcal > 0 ? `${mKcal} kcal · P ${mP}g · C ${mC}g · F ${mF}g` : 'اضغط + لإضافة أكل'}</p>
+                </div>
+              </div>
+              <button type="button" data-open-meal="${meal.id}" aria-label="إضافة"
+                class="w-9 h-9 rounded-full bg-zinc-800 hover:bg-emerald-400 hover:text-black text-zinc-200 font-black text-lg flex items-center justify-center active:scale-90 transition shrink-0">
+                +
+              </button>
+            </div>
+            ${itemsHtml}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderEOD() {
+      const totals = computeDayTotals(currentDate);
+      const status = evaluateDayStatus(totals);
+      document.getElementById('eod-date-text').textContent = currentDate;
+      const pill = document.getElementById('eod-status-pill');
+      pill.textContent = status.label;
+      pill.className = `px-3 py-1 rounded-full text-xs font-extrabold ${status.badgeClass}`;
+
+      const box = document.getElementById('eod-verdict-box');
+      if (status.code === 'empty') box.textContent = 'سجل وجباتك من تبويب اليوم عشان يظهرلك تقييم التزامك.';
+      else if (status.code === 'on_track') box.textContent = totals.p >= state.targets.p * 0.9 ? 'ممتاز يا بطل! 🎯 قفلت السعرات والبروتين في النطاق المثالي.' : 'سعراتك ممتازة 🎯، زود البروتين شوية عشان تقفل احتياجك.';
+      else if (status.code === 'over') box.textContent = `تجاوزت الهدف بـ ${totals.kcal - state.targets.kcal} سعرة ⚠️. ركز بكرة على موازنة السعرات.`;
+      else box.textContent = `أقل من الهدف بـ ${state.targets.kcal - totals.kcal} سعرة 📉. كمل باقي أكلك للحفاظ على الكتلة العضلية.`;
+
+      document.getElementById('eod-kcal').textContent = `${totals.kcal}`;
+      document.getElementById('eod-kcal-diff').textContent = `الهدف ${state.targets.kcal}`;
+      document.getElementById('eod-protein').textContent = `${totals.p}g`;
+      document.getElementById('eod-protein-diff').textContent = `الهدف ${state.targets.p}g`;
+      document.getElementById('eod-carbs').textContent = `${totals.c}g`;
+      document.getElementById('eod-carbs-diff').textContent = `الهدف ${state.targets.c}g`;
+      document.getElementById('eod-fat').textContent = `${totals.f}g`;
+      document.getElementById('eod-fat-diff').textContent = `الهدف ${state.targets.f}g`;
+
+      const day = state.logsByDate[currentDate] || {};
+      document.getElementById('eod-meals-breakdown').innerHTML = MEALS.map(m => {
+        const kcal = Math.round((day[m.id] || []).reduce((s, x) => s + (Number(x.kcal) || 0), 0));
+        return `<div class="flex items-center justify-between text-xs ios-surface px-3.5 py-2.5 rounded-xl"><span>${m.icon} ${m.name}</span><span class="num font-bold text-zinc-200">${kcal} kcal</span></div>`;
+      }).join('');
+    }
+
+    function renderMonthly() {
+      const picker = document.getElementById('month-picker');
+      if (!picker.value) picker.value = currentDate.slice(0, 7);
+      const [yr, mo] = picker.value.split('-').map(Number);
+      const daysInMonth = new Date(yr, mo, 0).getDate();
+
+      let onTrack = 0, over = 0, loggedDays = 0, sumKcal = 0;
+      const labels = [], dataKcal = [];
+      const firstDayJS = new Date(yr, mo - 1, 1).getDay();
+      const satOffset = (firstDayJS + 1) % 7;
+
+      const cells = Array.from({ length: satOffset }, () => `<div class="h-11"></div>`);
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${yr}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const totals = computeDayTotals(dateStr);
+        const st = evaluateDayStatus(totals);
+        labels.push(String(d));
+        dataKcal.push(totals.count > 0 ? totals.kcal : 0);
+
+        let bg = 'bg-zinc-900 text-zinc-500 border-white/5';
+        if (st.code === 'on_track') { onTrack++; loggedDays++; sumKcal += totals.kcal; bg = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'; }
+        else if (st.code === 'over') { over++; loggedDays++; sumKcal += totals.kcal; bg = 'bg-rose-500/20 text-rose-300 border-rose-500/40'; }
+        else if (st.code === 'under') { loggedDays++; sumKcal += totals.kcal; bg = 'bg-amber-500/20 text-amber-300 border-amber-500/40'; }
+
+        const ring = dateStr === currentDate ? 'ring-2 ring-white' : '';
+        cells.push(`<button type="button" data-cal-date="${dateStr}" class="h-11 rounded-xl border ${bg} ${ring} flex flex-col items-center justify-center active:scale-90 transition"><span class="num text-xs font-black">${d}</span><span class="num text-[9px] opacity-80">${totals.count > 0 ? totals.kcal : ''}</span></button>`);
+      }
+
+      document.getElementById('calendar-grid').innerHTML = cells.join('');
+      document.getElementById('m-on-track').textContent = onTrack;
+      document.getElementById('m-over').textContent = over;
+      document.getElementById('m-rate').textContent = loggedDays > 0 ? `${Math.round((onTrack / loggedDays) * 100)}%` : '0%';
+      document.getElementById('m-avg-kcal').textContent = loggedDays > 0 ? Math.round(sumKcal / loggedDays) : 0;
+
+      const ctx = document.getElementById('monthly-chart').getContext('2d');
+      if (monthlyChartInstance) monthlyChartInstance.destroy();
+      monthlyChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            data: dataKcal,
+            backgroundColor: dataKcal.map(v => v === 0 ? 'rgba(39,39,42,0.5)' : v > state.targets.kcal * 1.1 ? '#fb7185' : v >= state.targets.kcal * 0.9 ? '#34d399' : '#fbbf24'),
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#71717a', font: { size: 10 } }, grid: { display: false } },
+            y: { ticks: { color: '#71717a', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+          }
+        }
+      });
+    }
+
+    function renderSettings() {
+      document.getElementById('cfg-kcal').value = state.targets.kcal;
+      document.getElementById('cfg-protein').value = state.targets.p;
+      document.getElementById('cfg-carbs').value = state.targets.c;
+      document.getElementById('cfg-fat').value = state.targets.f;
+      document.getElementById('gemini-key-input').value = geminiApiKey;
+      document.getElementById('sync-provider').value = syncConfig.provider;
+      document.getElementById('sb-url').value = syncConfig.supabaseUrl || '';
+      document.getElementById('sb-key').value = syncConfig.supabaseKey || '';
+      document.getElementById('sb-id').value = syncConfig.syncId || 'ayman_macros';
+      document.getElementById('gs-url').value = syncConfig.scriptUrl || '';
+      toggleSyncFields();
+
+      const list = document.getElementById('custom-foods-list');
+      list.innerHTML = state.customFoods.length === 0
+        ? `<p class="text-zinc-500">لا توجد أكلات مخصصة بعد.</p>`
+        : state.customFoods.map((f, idx) => `
+          <div class="flex items-center justify-between ios-surface px-3 py-2 rounded-xl">
+            <div><p class="font-bold text-white">${f.name}</p><p class="num text-[11px] text-zinc-400">${f.kcal} kcal · P ${f.p} · C ${f.c} · F ${f.f}</p></div>
+            <button type="button" data-del-custom="${idx}" class="text-rose-400 font-bold px-2">حذف</button>
+          </div>`).join('');
+    }
+
+    // --- AI & Local Multi-Item Parser ---
+    function detectMealFromText(text) {
+      if (/(فطار|فطور)/.test(text)) return 'breakfast';
+      if (/(غدا|غداء)/.test(text)) return 'lunch';
+      if (/قبل الجيم/.test(text)) return 'pre_gym';
+      if (/بعد الجيم/.test(text)) return 'post_gym';
+      if (/(عشا|عشاء)/.test(text)) return 'dinner';
+      return null;
+    }
+
+    function parseLocalMulti(text) {
+      const detectedMeal = detectMealFromText(text);
+      let body = text.replace(/(اكلت|أكلت|في|فى|النهارده|الفطار|الفطور|الغدا|الغداء|قبل الجيم|بعد الجيم|العشاء|العشا)/g, ' ');
+      const parts = body.split(/\s+و\s+|\s*[,،+]\s*|\bو(?=[0-9\u0660-\u0669])/);
+      const items = [];
+      const unmatched = [];
+      for (let rawPart of parts) {
+        if (!rawPart) continue;
+        const clean = rawPart.trim().toLowerCase();
+        if (!clean) continue;
+        let qty = null;
+        if (/نص|نصف/.test(clean)) qty = 0.5;
+        else if (/ربع/.test(clean)) qty = 0.25;
+        const numMatch = clean.match(/(\d+(?:\.\d+)?)/);
+        if (numMatch) qty = parseFloat(numMatch[1]);
+        if (qty === null) qty = 100;
+
+        const queryWords = clean
+          .replace(/(\d+(?:\.\d+)?)/g, '')
+          .replace(/(نص|نصف|ربع|جم|جرام|غ|g|حبة|بيضة|بيضات|بيض|علبة|سكوب|معلقة|رغيف|كوب)/g, m => ['بيض','بيضة','بيضات'].includes(m) ? 'بيض' : ' ')
+          .replace(/\s+/g, ' ').trim();
+
+        let matched = null;
+        for (const f of allFoods()) {
+          if (queryWords && [f.name, ...(f.aliases || [])].join(' ').toLowerCase().includes(queryWords)) { matched = f; break; }
+        }
+        if (!matched && queryWords) {
+          for (const tk of queryWords.split(/\s+/).filter(Boolean)) {
+            matched = allFoods().find(f => [f.name, ...(f.aliases || [])].join(' ').toLowerCase().includes(tk));
+            if (matched) break;
+          }
+        }
+        if (!matched) {
+          // Surface what could not be recognised instead of dropping it silently
+          if (queryWords) unmatched.push({ text: rawPart.trim(), name: queryWords });
+          continue;
+        }
+
+        const hasGramsHint = /(جم|جرام|غ|g\b)/.test(clean);
+        const hasUnitHint = /(بيضة|بيضات|علبة|سكوب|معلقة|رغيف|كوب|حبة|عدد|موزة|نص|نصف|ربع)/.test(clean) || (!hasGramsHint && qty <= 12 && matched.unitGrams >= 10);
+        const mode = matched.isUnitOnly ? 'unit' : (hasUnitHint ? 'unit' : 'grams');
+        const calc = calculateMacrosForFood(matched, qty, mode);
+        items.push({ foodId: matched.id, qty, mode, name: matched.name, displayQty: calc.displayQty, kcal: calc.kcal, p: calc.p, c: calc.c, f: calc.f });
+      }
+      return { meal: detectedMeal, items, unmatched };
+    }
+
+    async function analyzeWithGemini(text) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
+      const prompt = `حلل جملة الأكل التالية بدقة غذائية (USDA).\nالجملة: "${text}"\nأرجع JSON فقط:\n{"meal":"breakfast|lunch|pre_gym|post_gym|dinner|null","items":[{"name":"اسم الأكلة","displayQty":"الكمية","kcal":100,"p":10,"c":10,"f":2}]}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } })
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const parsed = JSON.parse(data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
+      return {
+        meal: ['breakfast', 'lunch', 'pre_gym', 'post_gym', 'dinner'].includes(parsed.meal) ? parsed.meal : null,
+        items: Array.isArray(parsed.items) ? parsed.items.map(it => ({
+          name: String(it.name || 'أكلة'),
+          displayQty: String(it.displayQty || '1 حصة'),
+          kcal: Math.round(Number(it.kcal) || 0),
+          p: Math.round((Number(it.p) || 0) * 10) / 10,
+          c: Math.round((Number(it.c) || 0) * 10) / 10,
+          f: Math.round((Number(it.f) || 0) * 10) / 10
+        })) : []
+      };
+    }
+
+    function renderSmartPreview() {
+      const box = document.getElementById('smart-preview');
+      if (!smartParsedItems.length && !smartUnmatched.length) { box.classList.add('hidden'); return; }
+      const hasItems = smartParsedItems.length > 0;
+      document.getElementById('smart-match-name').textContent = hasItems ? 'تم التحليل' : 'محتاج توضيح';
+      document.getElementById('smart-add-btn').classList.toggle('hidden', !hasItems);
+      document.getElementById('smart-unmatched-list').innerHTML = smartUnmatched.map((u, i) => `
+        <div class="flex items-center justify-between gap-2 bg-amber-500/10 border border-amber-500/25 px-3 py-1 rounded-xl text-xs">
+          <span class="text-amber-200 min-w-0 truncate">مش لاقي: <span class="font-bold">${esc(u.text)}</span></span>
+          <button type="button" data-add-unmatched="${i}" class="shrink-0 text-sky-400 font-bold py-2 px-1">+ أضفها يدوي</button>
+        </div>`).join('');
+      const totKcal = Math.round(smartParsedItems.reduce((s, x) => s + x.kcal, 0));
+      const totP = Math.round(smartParsedItems.reduce((s, x) => s + x.p, 0) * 10) / 10;
+      const totC = Math.round(smartParsedItems.reduce((s, x) => s + x.c, 0) * 10) / 10;
+      const totF = Math.round(smartParsedItems.reduce((s, x) => s + x.f, 0) * 10) / 10;
+      document.getElementById('smart-match-macros').textContent = hasItems ? `${totKcal} kcal · P ${totP} · C ${totC} · F ${totF}` : '';
+      document.getElementById('smart-items-list').innerHTML = smartParsedItems.map((it, i) => `
+        <div class="flex items-center justify-between bg-black/40 px-3 py-2 rounded-xl text-xs">
+          <div>
+            <span class="font-bold text-white">${it.name}</span> <span class="text-zinc-400">(${it.displayQty})</span>
+            <span class="num text-[11px] text-emerald-400 block">${it.kcal} kcal · P ${it.p}g · C ${it.c}g · F ${it.f}g</span>
+          </div>
+          <button type="button" data-del-smart="${i}" class="text-rose-400 px-2 font-bold">&times;</button>
+        </div>`).join('');
+      box.classList.remove('hidden');
+    }
+
+    function selectSmartMealChip(mealId) {
+      smartMealTarget = mealId;
+      document.querySelectorAll('.smart-chip').forEach(c => {
+        const active = c.dataset.smartMeal === mealId;
+        c.className = `smart-chip shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold transition ${active ? 'bg-emerald-400 text-black' : 'bg-zinc-800/80 text-zinc-300'}`;
+      });
+    }
+
+    // --- Modal Helpers ---
+    function openFoodModal(mealId, editIdx = null) {
+      modalMealId = mealId;
+      const meal = MEALS.find(m => m.id === mealId);
+      const dayLog = state.logsByDate[currentDate] || {};
+      const item = editIdx === null ? null : (dayLog[mealId] || [])[editIdx];
+      const food = item ? allFoods().find(f => f.id === item.foodId) : null;
+      editingRef = item && food ? { mealId, idx: editIdx } : null;
+
+      document.getElementById('modal-action-label').textContent = editingRef ? 'تعديل في' : 'إضافة لـ';
+      document.getElementById('modal-meal-title').textContent = meal ? meal.name : '';
+      document.getElementById('confirm-add-food-btn').textContent = editingRef ? 'حفظ التعديل' : 'إضافة للوجبة';
+      document.getElementById('food-search').value = '';
+
+      const unitSelect = document.getElementById('food-unit-mode');
+      unitSelect.disabled = false;
+      unitSelect.value = editingRef ? (item.mode || 'grams') : 'grams';
+      document.getElementById('food-qty').value = editingRef ? item.qty : 100;
+
+      selectFoodInModal(editingRef ? food : null, true);
+      renderFoodPickerList('');
+      openModal('add-food-modal');
+    }
+
+    function renderFoodPickerList(filter) {
+      const q = filter.trim().toLowerCase();
+      const foods = allFoods().filter(f => !q || [f.name, ...(f.aliases || [])].join(' ').toLowerCase().includes(q));
+      document.getElementById('food-picker-list').innerHTML = foods.map(f => `
+        <button type="button" data-pick-food="${f.id}"
+          class="w-full text-right px-3.5 py-2.5 rounded-xl border ${selectedFood && selectedFood.id === f.id ? 'bg-emerald-500/15 border-emerald-500/40 text-white' : 'bg-zinc-900 border-white/5 text-zinc-300'} flex items-center justify-between text-xs">
+          <span class="font-bold">${f.name}</span>
+          <span class="num text-[11px] text-zinc-400">${f.kcal} kcal / ${f.isUnitOnly ? (f.unitName || 'حصة') : '100g'}</span>
+        </button>`).join('');
+    }
+
+    function selectFoodInModal(food, keepQty = false) {
+      selectedFood = food;
+      document.getElementById('selected-food-name').textContent = food ? food.name : 'اختر أكلة';
+      document.getElementById('confirm-add-food-btn').disabled = !food;
+      const unitSelect = document.getElementById('food-unit-mode');
+      const qtyEl = document.getElementById('food-qty');
+      if (food && food.isUnitOnly) {
+        unitSelect.value = 'unit';
+        unitSelect.disabled = true;
+        if (!keepQty) qtyEl.value = 1;
+      } else {
+        // Coming back from a per-piece food: return to the grams default
+        if (unitSelect.disabled && !keepQty) { unitSelect.value = 'grams'; qtyEl.value = 100; }
+        unitSelect.disabled = false;
+      }
+      updateModalPreview();
+    }
+
+    function updateModalPreview() {
+      const res = selectedFood
+        ? calculateMacrosForFood(selectedFood, document.getElementById('food-qty').value, document.getElementById('food-unit-mode').value)
+        : { kcal: 0, p: 0, c: 0, f: 0 };
+      document.getElementById('preview-kcal').textContent = res.kcal;
+      document.getElementById('preview-p').textContent = `${res.p}g`;
+      document.getElementById('preview-c').textContent = `${res.c}g`;
+      document.getElementById('preview-f').textContent = `${res.f}g`;
+    }
+
+    function updateAiBadge() {
+      const b = document.getElementById('ai-mode-badge');
+      if (!b) return;
+      b.textContent = geminiApiKey ? 'Gemini AI ✨' : 'محلل ذكي';
+      b.className = geminiApiKey ? 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300' : 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400';
+    }
+
+    function toggleSyncFields() {
+      const p = document.getElementById('sync-provider').value;
+      document.getElementById('sync-supabase-fields').classList.toggle('hidden', p !== 'supabase');
+      document.getElementById('sync-script-fields').classList.toggle('hidden', p !== 'apps_script');
+    }
+
+    // --- Event Wiring ---
+    document.querySelectorAll('.nav-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeTab = btn.dataset.tab;
+        ['today', 'eod', 'monthly', 'settings'].forEach(t => document.getElementById(`view-${t}`).classList.toggle('hidden', t !== activeTab));
+        document.querySelectorAll('.nav-tab').forEach(b => {
+          const active = b.dataset.tab === activeTab;
+          b.className = `nav-tab flex flex-col items-center py-1.5 rounded-full text-[10px] transition ${active ? 'bg-white/10 text-emerald-400 font-bold' : 'text-zinc-400 font-semibold'}`;
+        });
+        renderAll();
+      });
+    });
+
+    document.getElementById('date-picker').addEventListener('change', e => { if (e.target.value) { currentDate = e.target.value; renderAll(); } });
+    function shiftDate(delta) { const d = new Date(currentDate + 'T12:00:00'); d.setDate(d.getDate() + delta); currentDate = d.toISOString().slice(0, 10); renderAll(); }
+    document.getElementById('prev-day-btn').addEventListener('click', () => shiftDate(-1));
+    document.getElementById('next-day-btn').addEventListener('click', () => shiftDate(1));
+
+    document.querySelectorAll('.smart-chip').forEach(c => c.addEventListener('click', () => selectSmartMealChip(c.dataset.smartMeal)));
+
+    document.getElementById('ai-analyze-btn').addEventListener('click', async () => {
+      const text = document.getElementById('smart-input').value.trim();
+      if (!text) return showToast('اكتب اللي أكلته الأول');
+      const btn = document.getElementById('ai-analyze-btn');
+      btn.disabled = true; btn.textContent = '⏳...';
+      try {
+        let result, geminiFailed = false;
+        if (geminiApiKey) {
+          try { result = await analyzeWithGemini(text); }
+          catch (err) { geminiFailed = true; result = parseLocalMulti(text); }
+        } else {
+          result = parseLocalMulti(text);
+        }
+        if (result.meal) selectSmartMealChip(result.meal);
+        smartParsedItems = result.items || [];
+        smartUnmatched = result.unmatched || [];
+        if (geminiFailed) showToast('تعذر الاتصال بـ Gemini، اتحلل بالمحلل المحلي');
+        else if (!smartParsedItems.length && !smartUnmatched.length) showToast('جرب تكتب الوزن والأكلة بوضوح');
+        renderSmartPreview();
+      } finally {
+        btn.disabled = false; btn.textContent = '✨ حلل';
+      }
+    });
+
+    document.getElementById('smart-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); document.getElementById('ai-analyze-btn').click(); }
+    });
+
+    document.getElementById('smart-add-btn').addEventListener('click', () => {
+      if (!smartParsedItems.length) return;
+      const day = ensureDayLog(currentDate);
+      for (const it of smartParsedItems) day[smartMealTarget].push(it);
+      markDayChanged(currentDate);
+      saveState();
+      // Keep whatever was not recognised in the box so it can still be fixed
+      document.getElementById('smart-input').value = smartUnmatched.map(u => u.text).join(' و ');
+      smartParsedItems = [];
+      renderSmartPreview();
+      showToast('تمت الإضافة ✅');
+      renderAll();
+    });
+
+    document.addEventListener('click', e => {
+      const openBtn = e.target.closest('[data-open-meal]');
+      if (openBtn) openFoodModal(openBtn.dataset.openMeal);
+
+      const delBtn = e.target.closest('[data-del-meal]');
+      if (delBtn) {
+        const mealId = delBtn.dataset.delMeal, idx = Number(delBtn.dataset.delIdx), date = currentDate;
+        const [removed] = ensureDayLog(date)[mealId].splice(idx, 1);
+        markDayChanged(date); saveState(); renderAll();
+        if (removed) showToast('تم الحذف', {
+          label: 'تراجع',
+          onClick: () => {
+            const list = ensureDayLog(date)[mealId];
+            list.splice(Math.min(idx, list.length), 0, removed);
+            markDayChanged(date); saveState(); renderAll();
+          }
+        });
+      }
+
+      const editBtn = e.target.closest('[data-edit-meal]');
+      if (editBtn) openFoodModal(editBtn.dataset.editMeal, Number(editBtn.dataset.editIdx));
+
+      const addUnmatchedBtn = e.target.closest('[data-add-unmatched]');
+      if (addUnmatchedBtn) {
+        const u = smartUnmatched[Number(addUnmatchedBtn.dataset.addUnmatched)];
+        if (u) { openCustomFoodModal(u.name); reanalyzeAfterCustom = true; }
+      }
+
+      const pickBtn = e.target.closest('[data-pick-food]');
+      if (pickBtn) { const f = allFoods().find(x => x.id === pickBtn.dataset.pickFood); if (f) { selectFoodInModal(f); renderFoodPickerList(document.getElementById('food-search').value); } }
+
+      const quickChip = e.target.closest('[data-quick-id]');
+      if (quickChip) { const f = allFoods().find(x => x.id === quickChip.dataset.quickId); if (f) { selectFoodInModal(f); renderFoodPickerList(''); } }
+
+      const calBtn = e.target.closest('[data-cal-date]');
+      if (calBtn) { currentDate = calBtn.dataset.calDate; document.querySelector('[data-tab="today"]').click(); }
+
+      const delSmartBtn = e.target.closest('[data-del-smart]');
+      if (delSmartBtn) { smartParsedItems.splice(Number(delSmartBtn.dataset.delSmart), 1); renderSmartPreview(); }
+
+      const delCustomBtn = e.target.closest('[data-del-custom]');
+      if (delCustomBtn) { state.customFoods.splice(Number(delCustomBtn.dataset.delCustom), 1); saveState(); renderSettings(); showToast('تم الحذف'); }
+    });
+
+    document.getElementById('close-food-modal').addEventListener('click', () => closeModal('add-food-modal'));
+    document.getElementById('food-search').addEventListener('input', e => renderFoodPickerList(e.target.value));
+    document.getElementById('food-qty').addEventListener('input', updateModalPreview);
+    document.getElementById('food-unit-mode').addEventListener('change', e => {
+      // 100 is a sensible default for grams but not for pieces (100 eggs)
+      document.getElementById('food-qty').value = e.target.value === 'unit' ? 1 : 100;
+      updateModalPreview();
+    });
+
+    document.getElementById('confirm-add-food-btn').addEventListener('click', () => {
+      if (!selectedFood) return showToast('اختر أكلة الأول');
+      const qty = Number(document.getElementById('food-qty').value);
+      if (!(qty > 0)) return showToast('اكتب كمية صحيحة');
+      const mode = selectedFood.isUnitOnly ? 'unit' : document.getElementById('food-unit-mode').value;
+      const res = calculateMacrosForFood(selectedFood, qty, mode);
+      const entry = { foodId: selectedFood.id, qty, mode, name: selectedFood.name, displayQty: res.displayQty, kcal: res.kcal, p: res.p, c: res.c, f: res.f };
+      const list = ensureDayLog(currentDate)[modalMealId];
+      const isEdit = editingRef && editingRef.mealId === modalMealId && list[editingRef.idx];
+      if (isEdit) list[editingRef.idx] = entry; else list.push(entry);
+      editingRef = null;
+      markDayChanged(currentDate);
+      saveState();
+      closeModal('add-food-modal');
+      showToast(isEdit ? 'تم التعديل ✅' : 'تمت الإضافة ✅');
+      renderAll();
+    });
+
+    function openCustomFoodModal(name) {
+      reanalyzeAfterCustom = false;
+      if (typeof name === 'string') document.getElementById('cf-name').value = name;
+      openModal('custom-food-modal');
+    }
+    document.getElementById('open-custom-food-btn').addEventListener('click', () => openCustomFoodModal());
+    document.getElementById('modal-new-custom-btn').addEventListener('click', () => openCustomFoodModal());
+    document.getElementById('close-custom-modal').addEventListener('click', () => closeModal('custom-food-modal'));
+
+    // Tap outside a sheet, or press Escape, to close it
+    MODAL_IDS.forEach(id => document.getElementById(id).addEventListener('click', e => { if (e.target.id === id) closeModal(id); }));
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      const top = [...MODAL_IDS].reverse().find(isModalOpen);
+      if (top) closeModal(top);
+    });
+
+    document.getElementById('save-custom-food-btn').addEventListener('click', () => {
+      const name = document.getElementById('cf-name').value.trim();
+      if (!name) return showToast('اكتب اسم الأكلة');
+      const newFood = {
+        id: 'custom_' + Date.now(), name, aliases: [name],
+        kcal: Number(document.getElementById('cf-kcal').value) || 0,
+        p: Number(document.getElementById('cf-p').value) || 0,
+        c: Number(document.getElementById('cf-c').value) || 0,
+        f: Number(document.getElementById('cf-f').value) || 0,
+        isUnitOnly: document.getElementById('cf-basis').value === 'unit',
+        unitName: document.getElementById('cf-unit-label').value.trim() || 'حصة', unitGrams: 100
+      };
+      state.customFoods.unshift(newFood);
+      saveState();
+      closeModal('custom-food-modal');
+      document.getElementById('cf-name').value = '';
+      showToast('تم الحفظ ✅');
+      renderAll();
+      if (isModalOpen('add-food-modal')) { selectFoodInModal(newFood); renderFoodPickerList(''); }
+      // Came from an unrecognised item in the smart box: analyse again now that the food exists
+      if (reanalyzeAfterCustom) { reanalyzeAfterCustom = false; document.getElementById('ai-analyze-btn').click(); }
+    });
+
+    document.getElementById('save-targets-btn').addEventListener('click', () => {
+      state.targets = {
+        kcal: Math.max(500, Number(document.getElementById('cfg-kcal').value) || 2500),
+        p: Math.max(10, Number(document.getElementById('cfg-protein').value) || 190),
+        c: Math.max(10, Number(document.getElementById('cfg-carbs').value) || 270),
+        f: Math.max(5, Number(document.getElementById('cfg-fat').value) || 70)
+      };
+      saveState(); showToast('تم التحديث ✅'); renderAll();
+    });
+
+    document.getElementById('save-ai-key-btn').addEventListener('click', () => {
+      geminiApiKey = document.getElementById('gemini-key-input').value.trim();
+      try { localStorage.setItem(AI_KEY_STORAGE, geminiApiKey); } catch (e) {}
+      updateAiBadge();
+      showToast(geminiApiKey ? 'تم تفعيل Gemini AI ✨' : 'تم مسح المفتاح');
+    });
+
+    document.getElementById('sync-provider').addEventListener('change', toggleSyncFields);
+    document.getElementById('save-sync-btn').addEventListener('click', () => {
+      syncConfig = {
+        provider: document.getElementById('sync-provider').value,
+        supabaseUrl: document.getElementById('sb-url').value.trim(),
+        supabaseKey: document.getElementById('sb-key').value.trim(),
+        syncId: document.getElementById('sb-id').value.trim() || 'ayman_macros',
+        scriptUrl: document.getElementById('gs-url').value.trim()
+      };
+      try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncConfig)); } catch (e) {}
+      pullFromCloud(false);
+    });
+    document.getElementById('sync-now-btn').addEventListener('click', () => pullFromCloud(false));
+    document.getElementById('month-picker').addEventListener('change', renderMonthly);
+
+    document.getElementById('export-btn').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `macros-backup-${getLocalTodayISO()}.json`; a.click();
+      URL.revokeObjectURL(url); showToast('تم التصدير');
+    });
+
+    document.getElementById('import-input').addEventListener('change', e => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const imported = JSON.parse(ev.target.result);
+          if (!imported || !imported.logsByDate || typeof imported.logsByDate !== 'object') return showToast('ملف غير صالح');
+          const localDays = Object.keys(state.logsByDate).length;
+          const newDays = Object.keys(imported.logsByDate).length;
+          if (localDays > 0 && !confirm(`الاستيراد هيستبدل كل بياناتك الحالية (${localDays} يوم) ببيانات الملف (${newDays} يوم). نكمل؟`)) return;
+          state = { targets: imported.targets || state.targets, customFoods: imported.customFoods || state.customFoods, logsByDate: imported.logsByDate };
+          saveState(); renderAll(); showToast('تم الاستيراد ✅');
+        } catch (err) { showToast('ملف غير صالح'); }
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    });
+
+    updateAiBadge();
+    renderAll();
+    if (syncConfig.provider !== 'none') pullFromCloud(true);
+  </script>
+</body>
+</html>
