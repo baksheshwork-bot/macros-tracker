@@ -814,7 +814,9 @@ function parseLocal(text) {
   return { meal, items, unmatched };
 }
 
-async function analyzeGemini(text) {
+// source: { text } for typed input, { audio } (base64 WAV) for a voice recording
+async function analyzeGemini(source) {
+  const fromAudio = !!source.audio;
   const mine = state.customFoods.slice(0, 40).map(f => `${f.name}: ${f.kcal} سعرة، بروتين ${f.p}، كارب ${f.c}، دهون ${f.f} (${f.isUnitOnly ? 'لكل ' + (f.unitName || 'حصة') : 'لكل 100 جم'})`).join('\n');
   const prompt = `أنت خبير تغذية. المستخدم مصري وبيكتب بالعامية المصرية، وأحياناً النص جاي من إملاء صوتي وفيه أخطاء إملائية.
 استخرج كل صنف أكل أو شرب اتذكر في الجملة، كل صنف في عنصر لوحده، وما تسيبش أي صنف.
@@ -826,10 +828,12 @@ async function analyzeGemini(text) {
 - لو الصنف موجود في "أكلات المستخدم" استخدم قيمه هو.
 - name بالعربي ومختصر. displayQty زي "3 بيضات" أو "200 جم".
 - meal: الوجبة لو اتذكرت في الجملة، غير كده null.
-${mine ? 'أكلات المستخدم:\n' + mine + '\n' : ''}الجملة: """${text}"""
+${mine ? 'أكلات المستخدم:\n' + mine + '\n' : ''}${fromAudio ? 'الجملة في التسجيل الصوتي المرفق. اكتب نص اللي اتقال حرفياً في transcript، ولو التسجيل فاضي أو مش مفهوم رجّع transcript فاضي و items فاضية.' : `الجملة: """${source.text}"""`}
 أرجع JSON فقط بالشكل ده:
-{"meal":"breakfast|lunch|pre_gym|post_gym|snack|dinner|null","items":[{"name":"","displayQty":"","kcal":0,"p":0,"c":0,"f":0}]}`;
-  const body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } });
+{${fromAudio ? '"transcript":"",' : ''}"meal":"breakfast|lunch|pre_gym|post_gym|snack|dinner|null","items":[{"name":"","displayQty":"","kcal":0,"p":0,"c":0,"f":0}]}`;
+  const parts = [{ text: prompt }];
+  if (fromAudio) parts.push({ inlineData: { mimeType: 'audio/wav', data: source.audio } });
+  const body = JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } });
   let data = null, last = 'تعذر الاتصال بـ Gemini';
   for (const model of GEMINI_MODELS) {
     let res;
@@ -846,6 +850,7 @@ ${mine ? 'أكلات المستخدم:\n' + mine + '\n' : ''}الجملة: """${
   const raw = ((data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || []).filter(p => !p.thought).map(p => p.text || '').join('').replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
   let parsed; try { parsed = JSON.parse(raw || '{}'); } catch (e) { throw new Error('رد Gemini مش مفهوم'); }
   return {
+    transcript: String(parsed.transcript || '').trim(),
     meal: MEALS.some(m => m.id === parsed.meal) ? parsed.meal : null,
     items: (Array.isArray(parsed.items) ? parsed.items : []).map(it => ({ name: String(it.name || 'أكلة'), displayQty: String(it.displayQty || '1 حصة'), kcal: Math.round(+it.kcal || 0), p: r1(+it.p || 0), c: r1(+it.c || 0), f: r1(+it.f || 0) })),
     unmatched: []
@@ -924,7 +929,7 @@ function renderHero() {
 
 function renderComposer() {
   $('meal-chips').innerHTML = MEALS.map(m => `<button class="chip ${m.id === composerMeal ? 'on' : ''}" data-act="pick-meal" data-meal="${m.id}">${m.icon} ${m.name}</button>`).join('');
-  $('say-hint').textContent = aiKey ? 'التحليل بـ Gemini. اكتب أي وجبة بأي صيغة.' : 'مثال: "200 جرام رز وصدر فراخ وطبق سلطة" أو "بيضتين ونص رغيف".';
+  $('say-hint').textContent = aiKey ? 'التحليل بـ Gemini. اكتب أي وجبة، أو دوس الميكروفون وقول، ودوس تاني لما تخلص.' :'مثال: "200 جرام رز وصدر فراخ وطبق سلطة" أو "بيضتين ونص رغيف".';
 }
 function renderPreview() {
   const box = $('prev');
@@ -1179,7 +1184,7 @@ async function analyze() {
   const go = $('go'); go.disabled = true; go.textContent = '…';
   try {
     let res, fail = '';
-    if (aiKey) { try { res = await analyzeGemini(text); smart.source = 'gemini'; } catch (e) { fail = e.message; } }
+    if (aiKey) { try { res = await analyzeGemini({ text }); smart.source = 'gemini'; } catch (e) { fail = e.message; } }
     if (!res) { res = parseLocal(text); smart.source = 'local'; }
     if (res.meal) composerMeal = res.meal;
     smart.items = res.items; smart.unmatched = res.unmatched || [];
@@ -1189,12 +1194,75 @@ async function analyze() {
   } finally { go.disabled = false; go.textContent = 'حلّل'; }
 }
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null;
+const CAN_RECORD = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder && (window.AudioContext || window.webkitAudioContext));
+const SAY_PH = 'اكتب أو قول: 3 بيضات وطبق فول ورغيف';
+let rec = null, recorder = null;
+function micUI(on, placeholder) {
+  $('mic').classList.toggle('live', on); $('mic').setAttribute('aria-pressed', String(on));
+  $('mic').setAttribute('aria-label', on ? 'إيقاف التسجيل' : 'إملاء صوتي');
+  $('say').placeholder = on ? placeholder : SAY_PH;
+}
+// Two ways to listen: with a Gemini key the app records and Gemini transcribes (works in every browser);
+// without one it relies on the browser's own dictation, which only some browsers provide.
 function toggleMic() {
+  if (recorder) { recorder.stop(); return; }
   if (rec) { rec.stop(); return; }
-  if (!SR) return toast('المتصفح ده مفيهوش إملاء صوتي. استخدم ميكروفون الكيبورد');
+  if (aiKey && CAN_RECORD) return startRecording();
+  if (SR) return startDictation('ar-EG');
+  toast(CAN_RECORD ? 'المتصفح ده مفيهوش إملاء صوتي. ضيف مفتاح Gemini من الإعدادات عشان الصوت يشتغل' : 'المتصفح ده مش بيدعم التسجيل الصوتي');
+}
+async function startRecording() {
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { return toast(e && e.name === 'NotFoundError' ? 'مش لاقي ميكروفون' : 'اسمح للموقع باستخدام الميكروفون من إعدادات المتصفح'); }
+  const chunks = []; let stopTimer;
+  try { recorder = new MediaRecorder(stream); } catch (e) { stream.getTracks().forEach(t => t.stop()); return toast('المتصفح ده مش بيدعم التسجيل الصوتي'); }
+  recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  recorder.onstop = async () => {
+    clearTimeout(stopTimer); stream.getTracks().forEach(t => t.stop());
+    const type = recorder.mimeType; recorder = null; micUI(false);
+    await handleRecording(new Blob(chunks, { type }));
+  };
+  recorder.start(); micUI(true, 'بسجّل… اضغط الميكروفون لما تخلص');
+  stopTimer = setTimeout(() => { if (recorder) recorder.stop(); }, 30000);
+}
+async function handleRecording(blob) {
+  const go = $('go'); go.disabled = true; go.textContent = '…'; $('say').placeholder = 'بحلل التسجيل…';
+  try {
+    const audio = await blobToWavBase64(blob);
+    const res = await analyzeGemini({ audio });
+    if (!res.transcript && !res.items.length) return toast('مسمعتش كلام واضح. جرّب تاني وقرّب من الميكروفون');
+    $('say').value = res.transcript || $('say').value;
+    if (res.meal) composerMeal = res.meal;
+    smart = { items: res.items, unmatched: [], source: 'gemini' };
+    renderComposer(); renderPreview();
+    if (!res.items.length) toast('سمعتك، بس مفيش أكل في الكلام');
+  } catch (e) { toast(e.message || 'تعذر تحليل التسجيل'); }
+  finally { go.disabled = false; go.textContent = 'حلّل'; $('say').placeholder = SAY_PH; }
+}
+// Gemini accepts WAV everywhere, while browsers record webm or mp4: decode, downmix to 16 kHz mono, re-encode
+async function blobToWavBase64(blob) {
+  const AC = window.AudioContext || window.webkitAudioContext, OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  let decoded;
+  const ctx = new AC();
+  try { decoded = await ctx.decodeAudioData(await blob.arrayBuffer()); }
+  catch (e) { throw new Error('تعذر قراءة التسجيل. جرّب تاني'); }
+  finally { if (ctx.close) ctx.close(); }
+  if (decoded.duration < 0.4) throw new Error('التسجيل قصير أوي. دوس وقول الجملة كلها');
+  const rate = 16000, off = new OAC(1, Math.ceil(decoded.duration * rate), rate), src = off.createBufferSource();
+  src.buffer = decoded; src.connect(off.destination); src.start();
+  const pcm = (await off.startRendering()).getChannelData(0);
+  const dv = new DataView(new ArrayBuffer(44 + pcm.length * 2)), str = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVEfmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); str(36, 'data'); dv.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) { const s = Math.max(-1, Math.min(1, pcm[i])); dv.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true); }
+  const bytes = new Uint8Array(dv.buffer); let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function startDictation(lang) {
   const input = $('say'), base = input.value.trim(); let finalText = '', got = false, err = '';
-  rec = new SR(); rec.lang = 'ar-EG'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+  rec = new SR(); rec.lang = lang; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
   rec.onresult = e => {
     let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) finalText += t + ' '; else interim += t; }
@@ -1203,14 +1271,17 @@ function toggleMic() {
   };
   rec.onerror = e => { err = e.error; };
   rec.onend = () => {
-    rec = null; $('mic').classList.remove('live'); $('mic').setAttribute('aria-pressed', 'false'); input.placeholder = 'اكتب أو قول: 3 بيضات وطبق فول ورغيف';
-    if (err === 'not-allowed' || err === 'service-not-allowed') toast('اسمح للموقع باستخدام الميكروفون من إعدادات المتصفح');
-    else if (err === 'network') toast('الإملاء الصوتي محتاج إنترنت');
+    rec = null; micUI(false);
+    if (got) return analyze();
+    // some browsers do not ship the Egyptian model: retry once with generic Arabic
+    if (err === 'language-not-supported' && lang !== 'ar') return startDictation('ar');
+    const viaGemini = aiKey ? '' : ' أو ضيف مفتاح Gemini من الإعدادات عشان الصوت يشتغل في أي متصفح';
+    if (err === 'not-allowed') toast('اسمح للموقع باستخدام الميكروفون من إعدادات المتصفح');
     else if (err === 'audio-capture') toast('مش لاقي ميكروفون');
-    else if (!got) toast('مسمعتش حاجة. جرّب تاني');
-    else analyze();
+    else if (err === 'network' || err === 'service-not-allowed' || err === 'language-not-supported') toast(`إملاء المتصفح ده مش شغال (${err}). جرّب Chrome${viaGemini}`);
+    else toast(`مسمعتش حاجة${err && err !== 'no-speech' && err !== 'aborted' ? ` (${err})` : ''}. جرّب تاني وقرّب من الميكروفون`);
   };
-  try { rec.start(); $('mic').classList.add('live'); $('mic').setAttribute('aria-pressed', 'true'); input.placeholder = 'بسمعك… اتكلم'; }
+  try { rec.start(); micUI(true, 'بسمعك… اتكلم'); }
   catch (e) { rec = null; toast('تعذر تشغيل الميكروفون'); }
 }
 function addItems(mealId, items, msg) {
